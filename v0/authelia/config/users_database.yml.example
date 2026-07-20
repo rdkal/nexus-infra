@@ -1,0 +1,13 @@
+# Seeded once on first deploy, then never touched by nexus again — edit in place at
+# $NEXUS_VOLUME_CONFIG/users_database.yml to add/change users.
+#
+# Generate a password hash with:
+#   authelia crypto hash generate argon2 --password 'your-password'
+users:
+  admin:
+    disabled: false
+    displayname: 'Admin'
+    password: '$argon2id$REPLACE_ME'
+    email: admin@example.com
+    groups:
+      - admins

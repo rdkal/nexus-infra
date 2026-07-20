@@ -1,0 +1,31 @@
+# spec path: github.com/rdkal/nexus-infra/v0/authelia
+
+build: |
+  set -eu
+  VERSION="v4.39.11"
+  if [ ! -x "$NEXUS_VOLUME_BIN/authelia" ]; then
+    curl -fL "https://github.com/authelia/authelia/releases/download/${VERSION}/authelia-${VERSION}-linux-amd64.tar.gz" -o /tmp/authelia.tar.gz
+    tar -xzf /tmp/authelia.tar.gz -C /tmp
+    mv /tmp/authelia-linux-amd64 "$NEXUS_VOLUME_BIN/authelia"
+    chmod +x "$NEXUS_VOLUME_BIN/authelia"
+  fi
+  mkdir -p "$NEXUS_VOLUME_DATA"
+  # Rendered once, then hand-edited in place (access_control rules, users) — never
+  # overwritten by later deploys. Delete the file manually to force a re-render.
+  if [ ! -f "$NEXUS_VOLUME_CONFIG/configuration.yml" ]; then
+    envsubst < config/configuration.yml.tmpl > "$NEXUS_VOLUME_CONFIG/configuration.yml"
+  fi
+  if [ ! -f "$NEXUS_VOLUME_CONFIG/users_database.yml" ]; then
+    cp config/users_database.yml.example "$NEXUS_VOLUME_CONFIG/users_database.yml"
+  fi
+
+volumes:
+  bin: {}      # downloaded authelia binary
+  config: {}   # rendered configuration.yml + users_database.yml
+  data: {}     # sqlite db (auth sessions/history) + notification file
+
+services:
+  authelia:
+    run: >
+      $NEXUS_VOLUME_BIN/authelia
+      --config $NEXUS_VOLUME_CONFIG/configuration.yml

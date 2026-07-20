@@ -1,0 +1,24 @@
+# spec path: github.com/rdkal/nexus-infra/v0/traefik
+
+build: |
+  set -eu
+  VERSION="v3.3.4"
+  if [ ! -x "$NEXUS_VOLUME_BIN/traefik" ]; then
+    curl -fL "https://github.com/traefik/traefik/releases/download/${VERSION}/traefik_${VERSION}_linux_amd64.tar.gz" -o /tmp/traefik.tar.gz
+    tar -xzf /tmp/traefik.tar.gz -C "$NEXUS_VOLUME_BIN" traefik
+    chmod +x "$NEXUS_VOLUME_BIN/traefik"
+  fi
+  mkdir -p "$NEXUS_VOLUME_DYNAMIC"
+  envsubst < config/traefik.yml.tmpl > "$NEXUS_VOLUME_CONFIG/traefik.yml"
+
+volumes:
+  bin: {}       # holds the downloaded traefik binary across deployments
+  config: {}    # rendered traefik.yml (static config)
+  dynamic: {}   # EXTENSION POINT — other projects drop route fragments here, see README
+  acme: {}      # Let's Encrypt certificate storage (acme.json)
+
+services:
+  traefik:
+    run: >
+      $NEXUS_VOLUME_BIN/traefik
+      --configFile=$NEXUS_VOLUME_CONFIG/traefik.yml

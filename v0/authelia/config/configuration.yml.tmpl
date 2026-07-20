@@ -1,0 +1,42 @@
+server:
+  address: 'tcp://127.0.0.1:9091'
+
+log:
+  level: info
+
+identity_validation:
+  reset_password:
+    jwt_secret: ${AUTHELIA_JWT_SECRET}
+
+authentication_backend:
+  file:
+    path: '${NEXUS_VOLUME_CONFIG}/users_database.yml'
+
+session:
+  secret: ${AUTHELIA_SESSION_SECRET}
+  inactivity: '12h'
+  expiration: '24h'
+  remember_me: '30d'
+  redis:
+    host: '127.0.0.1'
+    port: 6379
+  cookies:
+    - domain: '${AUTHELIA_COOKIE_DOMAIN}'
+      authelia_url: 'https://${AUTHELIA_SUBDOMAIN}.${AUTHELIA_COOKIE_DOMAIN}'
+
+storage:
+  encryption_key: ${AUTHELIA_STORAGE_ENCRYPTION_KEY}
+  local:
+    path: '${NEXUS_VOLUME_DATA}/db.sqlite3'
+
+notifier:
+  filesystem:
+    filename: '${NEXUS_VOLUME_DATA}/notify.txt'
+
+# access_control is deliberately NOT templated here — each deployment's protected
+# domains/policies differ. Add your rules directly to the rendered
+# $NEXUS_VOLUME_CONFIG/configuration.yml after first deploy, or fork this template
+# per-environment. See README "Known limitation" for why this isn't parameterized.
+access_control:
+  default_policy: deny
+  rules: []
