@@ -33,10 +33,16 @@ notifier:
   filesystem:
     filename: '${NEXUS_VOLUME_DATA}/notify.txt'
 
-# access_control is deliberately NOT templated here — each deployment's protected
-# domains/policies differ. Add your rules directly to the rendered
-# $NEXUS_VOLUME_CONFIG/configuration.yml after first deploy, or fork this template
-# per-environment. See README "Known limitation" for why this isn't parameterized.
+# Fine-grained per-domain rules are deliberately NOT templated here — each
+# deployment's protected domains/policies differ. Add your own rules directly to
+# the rendered $NEXUS_VOLUME_CONFIG/configuration.yml after first deploy. This one
+# blanket rule is the safe-by-default seed: Authelia rejects `default_policy: deny`
+# outright when `rules` is empty (it requires at least one rule in that case), so
+# an empty list isn't a valid "locked down until configured" state here — this
+# wildcard rule is the closest equivalent: everything under the cookie domain
+# requires at least one factor until you add narrower rules.
 access_control:
   default_policy: deny
-  rules: []
+  rules:
+    - domain: '*.${AUTHELIA_COOKIE_DOMAIN}'
+      policy: one_factor
