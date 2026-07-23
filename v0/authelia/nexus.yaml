@@ -49,7 +49,6 @@ build: |
     envsubst < config/traefik-dynamic.yml.tmpl > "$TRAEFIK_DYNAMIC_DIR/authelia.yml"
   else
     echo "WARNING: TRAEFIK_DYNAMIC_DIR is unset — skipping traefik route publish. Set it (directly at root level, or via a parent's environment: override when nested) to wire this authelia into traefik." >&2
-    echo "TRAEFIK_DYNAMIC_DIR was: '${TRAEFIK_DYNAMIC_DIR:-}'" >&2
   fi
 
 volumes:
