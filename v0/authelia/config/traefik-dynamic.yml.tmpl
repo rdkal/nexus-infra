@@ -1,0 +1,25 @@
+http:
+  middlewares:
+    authelia:
+      forwardAuth:
+        address: "http://127.0.0.1:9091/api/authz/forward-auth"
+        authResponseHeaders:
+          - Remote-User
+          - Remote-Groups
+          - Remote-Name
+          - Remote-Email
+
+  routers:
+    authelia:
+      rule: "Host(`${AUTHELIA_SUBDOMAIN}.${AUTHELIA_COOKIE_DOMAIN}`)"
+      entryPoints:
+        - websecure
+      service: authelia
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    authelia:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:9091"

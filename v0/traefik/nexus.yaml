@@ -1,5 +1,12 @@
 # spec path: github.com/rdkal/nexus-infra/v0/traefik
 
+# Required secrets — set these in $NEXUS_HOME/env/traefik.env (operator file, not in
+# git). Self-referencing here is deliberate: it forces the deploy to fail loudly if
+# either is missing, instead of silently rendering a broken config.
+environment:
+  ACME_EMAIL: ${ACME_EMAIL}
+  CF_DNS_API_TOKEN: ${CF_DNS_API_TOKEN}
+
 build: |
   set -eu
   VERSION="v3.3.4"

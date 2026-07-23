@@ -1,5 +1,19 @@
 # spec path: github.com/rdkal/nexus-infra/v0/authelia
 
+# Required secrets/config — set these in $NEXUS_HOME/env/authelia.env (operator file,
+# not in git). Self-referencing here forces the deploy to fail loudly if any is
+# missing, instead of silently rendering a broken config.
+environment:
+  AUTHELIA_JWT_SECRET: ${AUTHELIA_JWT_SECRET}
+  AUTHELIA_SESSION_SECRET: ${AUTHELIA_SESSION_SECRET}
+  AUTHELIA_STORAGE_ENCRYPTION_KEY: ${AUTHELIA_STORAGE_ENCRYPTION_KEY}
+  AUTHELIA_COOKIE_DOMAIN: ${AUTHELIA_COOKIE_DOMAIN}
+  AUTHELIA_SUBDOMAIN: ${AUTHELIA_SUBDOMAIN}
+  # Traefik's dynamic volume, injected by nexus for every deployed project — requires
+  # the traefik project to already be deployed (see nexus DESIGN.md: "the provider
+  # must be deployed before the consumer for its variable to exist").
+  TRAEFIK_DYNAMIC_DIR: ${NEXUS_TRAEFIK_DYNAMIC}
+
 build: |
   set -eu
   VERSION="v4.39.11"
@@ -18,6 +32,11 @@ build: |
   if [ ! -f "$NEXUS_VOLUME_CONFIG/users_database.yml" ]; then
     cp config/users_database.yml.example "$NEXUS_VOLUME_CONFIG/users_database.yml"
   fi
+  # Publish our own Traefik route + a reusable forward-auth middleware into
+  # traefik's dynamic volume — the concrete extension-point handshake documented
+  # in ../traefik/README.md. Any other project just references "authelia@file" as
+  # a middleware on its own route fragment to require auth.
+  envsubst < config/traefik-dynamic.yml.tmpl > "$TRAEFIK_DYNAMIC_DIR/authelia.yml"
 
 volumes:
   bin: {}      # downloaded authelia binary

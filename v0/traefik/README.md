@@ -19,17 +19,27 @@ no routes for any particular app.
 ### How another project gets routed through Traefik (the extension point)
 
 Traefik watches the `dynamic` volume (`watch: true`) and hot-reloads on any change — no
-redeploy of traefik itself needed. To expose a service:
+redeploy of traefik itself needed. To expose a service, from another project's
+`nexus.yaml` build step:
 
-1. Drop a `<your-project>.yml` file into `~/.nexus/volumes/traefik/dynamic/` (this is a
-   fixed host path today — see "Known limitation" below).
-2. Define a `router` (host rule, entrypoint `websecure`, `certResolver: letsencrypt`) and
-   a `service` pointing at `http://127.0.0.1:<your-port>`.
-3. If the route needs auth, add the `authelia` forward-auth middleware — see
-   `../authelia/README.md` for its address and how to reference it.
+```yaml
+environment:
+  TRAEFIK_DYNAMIC_DIR: ${NEXUS_TRAEFIK_DYNAMIC}   # resolved by nexus, no hardcoded path
+build: |
+  envsubst < config/traefik-route.yml.tmpl > "$TRAEFIK_DYNAMIC_DIR/<your-project>.yml"
+```
 
-This mirrors what `~/.config/traefik/dynamic/routes.yml` did in the pre-Nexus setup —
-that file's routers are a working reference for the shape a fragment should take.
+`NEXUS_TRAEFIK_DYNAMIC` is injected automatically for every project once traefik is
+deployed (nexus's `NEXUS_<PROJECT>_<VOLUME>` convention — see nexus's DESIGN.md). No
+literal path to get wrong, and no manual coordination with whoever named the traefik
+project. Note: **traefik must be deployed before the consumer project**, or the variable
+won't exist yet.
+
+In the dropped fragment, define a `router` (host rule, entrypoint `websecure`,
+`certResolver: letsencrypt`) and a `service` pointing at `http://127.0.0.1:<your-port>`.
+If the route needs auth, reference the `authelia@file` middleware — see
+`../authelia/README.md`, which publishes that middleware into this same volume as a
+worked example of this exact handshake.
 
 ## Services & ports
 
@@ -43,24 +53,21 @@ that file's routers are a working reference for the shape a fragment should take
   service is actually listening — that's expected, not an error state for traefik itself.
 - Commonly paired with `../authelia` for routes that need auth.
 
-## Required environment (secrets — see "Known limitation")
+## Required environment
 
-- `ACME_EMAIL` — Let's Encrypt account email.
-- `CF_DNS_API_TOKEN` — Cloudflare API token, scoped to DNS edit, for the DNS-01 challenge.
-  Read directly by the traefik/lego process, not by this repo.
+Set these in `$NEXUS_HOME/env/traefik.env` (operator file — not in git, persists across
+deploys). `nexus.yaml` declares both as required: the deploy fails loudly at build time if
+either is missing, rather than silently rendering a broken config.
 
-## Known limitation: secrets and cross-project paths are both out-of-band
+```sh
+# ~/.nexus/env/traefik.env
+ACME_EMAIL=you@example.com
+CF_DNS_API_TOKEN=your-cloudflare-token-scoped-to-dns-edit
+```
 
-Nexus has no built-in secret management or cross-project volume-path injection yet (see
-nexus's own DESIGN.md, "Explicitly deferred" / "Open Questions"). Until that lands:
-
-- `ACME_EMAIL` and `CF_DNS_API_TOKEN` must be present in the **nexus daemon's own
-  environment** so the `traefik` service inherits them (e.g.
-  `systemctl --user edit nexus.service` and add `Environment=` lines, then
-  `systemctl --user restart nexus`). They are not stored in this repo.
-- The `dynamic` volume's absolute path (`~/.nexus/volumes/traefik/dynamic`) is a
-  convention documented here, not something Nexus resolves for you — other projects'
-  build/deploy steps must know this literal path.
+These are read directly by the traefik/lego process for the Let's Encrypt DNS-01
+challenge. Isolation is automatic: only this project's build/service processes ever see
+them (nexus's per-project environment, not the daemon's full environment).
 
 ## Deploy / rollback notes
 

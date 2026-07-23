@@ -3,9 +3,14 @@
 ## Purpose
 
 Authentication/forward-auth gateway. Sits behind Traefik as a `forwardAuth` middleware
-target — see `../traefik/README.md` for how a project wires a route through it. This
-project only runs Authelia itself; it carries no opinions about which domains it protects
-(that's `access_control`, deliberately left for you to fill in — see below).
+target. This project runs Authelia itself *and* publishes the wiring Traefik needs to
+reach it — its own login-page route plus a reusable `authelia@file` middleware — into
+Traefik's `dynamic` volume on every deploy (see "Publishes into traefik's dynamic
+volume" below). It carries no opinions about which domains it protects (that's
+`access_control`, deliberately left for you to fill in — see below).
+
+**Requires `../traefik` to already be deployed** — this project's build step needs
+`$NEXUS_TRAEFIK_DYNAMIC`, which only exists once traefik has deployed at least once.
 
 ## Volumes
 
@@ -29,6 +34,18 @@ deploy:
 3. Restart the service (`nexus` will pick up config changes on next redeploy/restart —
    Authelia itself doesn't hot-reload `access_control` changes without a restart).
 
+### Publishes into traefik's `dynamic` volume (the extension-point handshake)
+
+Every deploy renders `config/traefik-dynamic.yml.tmpl` to
+`$NEXUS_TRAEFIK_DYNAMIC/authelia.yml`, which defines:
+
+- a `router` for `${AUTHELIA_SUBDOMAIN}.${AUTHELIA_COOKIE_DOMAIN}` (Authelia's own
+  login/portal page), and
+- the `authelia` forward-auth `middleware`, reusable by any other project's route.
+
+Other projects needing auth on a route just add `middlewares: [authelia@file]` to their
+own dropped fragment — they never need to know Authelia's port or address.
+
 ## Services & ports
 
 | Service | Binds |
@@ -41,20 +58,23 @@ deploy:
   expected to already be running on the host.
 - Commonly paired with `../traefik`, which forwards auth-required routes to this service.
 
-## Required environment (secrets — see "Known limitation")
+## Required environment
 
-- `AUTHELIA_JWT_SECRET` — reset-password JWT signing secret.
-- `AUTHELIA_SESSION_SECRET` — session cookie secret.
-- `AUTHELIA_STORAGE_ENCRYPTION_KEY` — sqlite storage encryption key.
-- `AUTHELIA_COOKIE_DOMAIN` — the root domain the session cookie applies to (e.g. `example.com`).
-- `AUTHELIA_SUBDOMAIN` — the subdomain Authelia itself is served on (e.g. `auth` for `auth.example.com`).
+Set these in `$NEXUS_HOME/env/authelia.env` (operator file — not in git, persists across
+deploys). `nexus.yaml` declares all of them as required: the deploy fails loudly at build
+time if any is missing.
 
-## Known limitation: secrets are out-of-band (same as traefik)
+```sh
+# ~/.nexus/env/authelia.env
+AUTHELIA_JWT_SECRET=...              # reset-password JWT signing secret
+AUTHELIA_SESSION_SECRET=...          # session cookie secret
+AUTHELIA_STORAGE_ENCRYPTION_KEY=...  # sqlite storage encryption key
+AUTHELIA_COOKIE_DOMAIN=example.com   # root domain the session cookie applies to
+AUTHELIA_SUBDOMAIN=auth              # subdomain authelia is served on (auth.example.com)
+```
 
-Nexus has no built-in secret management yet. The four `AUTHELIA_*` values above must be
-present in the **nexus daemon's own environment** (see `../traefik/README.md`'s "Known
-limitation" section for the exact mechanism) so the `authelia` service inherits them at
-build/run time. They are not stored in this repo.
+Isolation is automatic: only this project's build/service processes ever see these
+(nexus's per-project environment, not the daemon's full environment).
 
 ## Deploy / rollback notes
 
