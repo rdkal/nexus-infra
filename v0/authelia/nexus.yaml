@@ -12,7 +12,16 @@ environment:
   # Traefik's dynamic volume, injected by nexus for every deployed project — requires
   # the traefik project to already be deployed (see nexus DESIGN.md: "the provider
   # must be deployed before the consumer for its variable to exist").
-  TRAEFIK_DYNAMIC_DIR: ${NEXUS_TRAEFIK_DYNAMIC}
+  #
+  # The `:-` default is deliberate, not cosmetic: when this project is *nested* under
+  # a parent (e.g. retu/authelia), NEXUS_TRAEFIK_DYNAMIC doesn't exist at all — the
+  # parent's own environment: override supplies the real value (e.g.
+  # NEXUS_RETU_TRAEFIK_DYNAMIC) instead. Nexus currently validates this project's own
+  # committed default even when a parent override will replace it (see
+  # github.com/rdkal/nexus issue for the bug report), so a hard reference here would
+  # fail nested deploys before the override ever gets a chance to apply. Root-level
+  # use is unaffected: NEXUS_TRAEFIK_DYNAMIC is genuinely defined there.
+  TRAEFIK_DYNAMIC_DIR: ${NEXUS_TRAEFIK_DYNAMIC:-}
 
 build: |
   set -eu
@@ -36,7 +45,11 @@ build: |
   # traefik's dynamic volume — the concrete extension-point handshake documented
   # in ../traefik/README.md. Any other project just references "authelia@file" as
   # a middleware on its own route fragment to require auth.
-  envsubst < config/traefik-dynamic.yml.tmpl > "$TRAEFIK_DYNAMIC_DIR/authelia.yml"
+  if [ -n "${TRAEFIK_DYNAMIC_DIR:-}" ]; then
+    envsubst < config/traefik-dynamic.yml.tmpl > "$TRAEFIK_DYNAMIC_DIR/authelia.yml"
+  else
+    echo "WARNING: TRAEFIK_DYNAMIC_DIR is unset — skipping traefik route publish. Set it (directly at root level, or via a parent's environment: override when nested) to wire this authelia into traefik." >&2
+  fi
 
 volumes:
   bin: {}      # downloaded authelia binary
