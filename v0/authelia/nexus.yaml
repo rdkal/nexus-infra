@@ -28,8 +28,8 @@ build: |
   VERSION="v4.39.11"
   if [ ! -x "$NEXUS_VOLUME_BIN/authelia" ]; then
     curl -fL "https://github.com/authelia/authelia/releases/download/${VERSION}/authelia-${VERSION}-linux-amd64.tar.gz" -o /tmp/authelia.tar.gz
-    tar -xzf /tmp/authelia.tar.gz -C /tmp
-    mv /tmp/authelia-linux-amd64 "$NEXUS_VOLUME_BIN/authelia"
+    tar -xzf /tmp/authelia.tar.gz -C /tmp authelia
+    mv /tmp/authelia "$NEXUS_VOLUME_BIN/authelia"
     chmod +x "$NEXUS_VOLUME_BIN/authelia"
   fi
   mkdir -p "$NEXUS_VOLUME_DATA"
