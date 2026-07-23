@@ -5,9 +5,9 @@
 #   authelia crypto hash generate argon2 --password 'your-password'
 users:
   admin:
-    disabled: false
+    disabled: true   # syntactically valid but unusable placeholder — enable and set a real password before use
     displayname: 'Admin'
-    password: '$argon2id$REPLACE_ME'
+    password: '$argon2id$v=19$m=65536,t=3,p=4$AbyF4x9BDWuuB5e1X/W/FA$HafXgeT+lkVrR/LVTjakbLxFyLEFZa9BP3LWUUcoIuY'
     email: admin@example.com
     groups:
       - admins
