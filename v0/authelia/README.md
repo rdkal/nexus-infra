@@ -39,7 +39,7 @@ deploy:
 Every deploy renders `config/traefik-dynamic.yml.tmpl` to
 `$NEXUS_TRAEFIK_DYNAMIC/authelia.yml`, which defines:
 
-- a `router` for `${AUTHELIA_SUBDOMAIN}.${AUTHELIA_COOKIE_DOMAIN}` (Authelia's own
+- a `router` for `${SUBDOMAIN}.${COOKIE_DOMAIN}` (Authelia's own
   login/portal page), and
 - the `authelia` forward-auth `middleware`, reusable by any other project's route.
 
@@ -69,8 +69,8 @@ time if any is missing.
 AUTHELIA_JWT_SECRET=...              # reset-password JWT signing secret
 AUTHELIA_SESSION_SECRET=...          # session cookie secret
 AUTHELIA_STORAGE_ENCRYPTION_KEY=...  # sqlite storage encryption key
-AUTHELIA_COOKIE_DOMAIN=example.com   # root domain the session cookie applies to
-AUTHELIA_SUBDOMAIN=auth              # subdomain authelia is served on (auth.example.com)
+COOKIE_DOMAIN=example.com   # root domain the session cookie applies to
+SUBDOMAIN=auth              # subdomain authelia is served on (auth.example.com)
 ```
 
 Isolation is automatic: only this project's build/service processes ever see these

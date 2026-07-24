@@ -7,8 +7,12 @@ environment:
   AUTHELIA_JWT_SECRET: ${AUTHELIA_JWT_SECRET}
   AUTHELIA_SESSION_SECRET: ${AUTHELIA_SESSION_SECRET}
   AUTHELIA_STORAGE_ENCRYPTION_KEY: ${AUTHELIA_STORAGE_ENCRYPTION_KEY}
-  AUTHELIA_COOKIE_DOMAIN: ${AUTHELIA_COOKIE_DOMAIN}
-  AUTHELIA_SUBDOMAIN: ${AUTHELIA_SUBDOMAIN}
+  # Plain names (no AUTHELIA_ prefix) — these are ours, not real Authelia settings.
+  # AUTHELIA_* is Authelia's own env-injection convention; using it for our own
+  # template variables caused spurious "environment variable not expected"
+  # warnings on every start.
+  COOKIE_DOMAIN: ${COOKIE_DOMAIN}
+  SUBDOMAIN: ${SUBDOMAIN}
   # Traefik's dynamic volume, injected by nexus for every deployed project — requires
   # the traefik project to already be deployed (see nexus DESIGN.md: "the provider
   # must be deployed before the consumer for its variable to exist").

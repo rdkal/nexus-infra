@@ -21,8 +21,8 @@ session:
     host: '127.0.0.1'
     port: 6379
   cookies:
-    - domain: '${AUTHELIA_COOKIE_DOMAIN}'
-      authelia_url: 'https://${AUTHELIA_SUBDOMAIN}.${AUTHELIA_COOKIE_DOMAIN}'
+    - domain: '${COOKIE_DOMAIN}'
+      authelia_url: 'https://${SUBDOMAIN}.${COOKIE_DOMAIN}'
 
 storage:
   encryption_key: ${AUTHELIA_STORAGE_ENCRYPTION_KEY}
@@ -44,5 +44,5 @@ notifier:
 access_control:
   default_policy: deny
   rules:
-    - domain: '*.${AUTHELIA_COOKIE_DOMAIN}'
+    - domain: '*.${COOKIE_DOMAIN}'
       policy: one_factor

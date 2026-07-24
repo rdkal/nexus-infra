@@ -11,7 +11,7 @@ http:
 
   routers:
     authelia:
-      rule: "Host(`${AUTHELIA_SUBDOMAIN}.${AUTHELIA_COOKIE_DOMAIN}`)"
+      rule: "Host(`${SUBDOMAIN}.${COOKIE_DOMAIN}`)"
       entryPoints:
         - websecure
       service: authelia
