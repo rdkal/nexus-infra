@@ -65,3 +65,4 @@ services:
     run: >
       $NEXUS_VOLUME_BIN/authelia
       --config $NEXUS_VOLUME_CONFIG/configuration.yml
+# forced rebuild trigger 1784873061
