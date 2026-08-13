@@ -1,0 +1,53 @@
+# spec path: github.com/rdkal/nexus-infra/v0/duckdb-ui
+
+# Required — self-referencing forces a loud failure at build time if unset, same
+# pattern as traefik/authelia's required secrets. Not a secret itself: the directory
+# this SQL console opens (relative-path queries resolve against it, same as a human
+# `cd`'d there on a terminal). A consumer project overrides it — see README.md.
+environment:
+  DUCKDB_UI_DATA_DIR: ${DUCKDB_UI_DATA_DIR}
+
+build: |
+  set -eu
+  VERSION="v1.5.4"
+  if [ ! -x "$NEXUS_VOLUME_BIN/duckdb" ]; then
+    curl -fL "https://github.com/duckdb/duckdb/releases/download/${VERSION}/duckdb_cli-linux-amd64.gz" -o /tmp/duckdb.gz
+    gunzip -c /tmp/duckdb.gz > "$NEXUS_VOLUME_BIN/duckdb"
+    chmod +x "$NEXUS_VOLUME_BIN/duckdb"
+  fi
+  # Pre-fetch the `ui` extension once here (needs network — the only point this
+  # project ever touches the internet). The extension bundles its own frontend
+  # assets, so the service itself serves everything locally afterward with no
+  # runtime dependency on ui.duckdb.org. HOME is scoped to this volume for both
+  # this and the service's own run: below, so the extension cache lands inside
+  # $NEXUS_VOLUME_BIN, not the operator's own ~/.duckdb.
+  HOME="$NEXUS_VOLUME_BIN" "$NEXUS_VOLUME_BIN/duckdb" -c "INSTALL ui;"
+  # `-readonly` (services: below) only takes effect against a real database
+  # *file* — `duckdb -readonly` with no filename errors outright ("Cannot
+  # launch in-memory database in read-only mode!", confirmed live). This
+  # throwaway empty catalog exists solely so -readonly has a file to attach
+  # to; read_parquet() queries against DUCKDB_UI_DATA_DIR never touch it.
+  if [ ! -f "$NEXUS_VOLUME_BIN/catalog.duckdb" ]; then
+    HOME="$NEXUS_VOLUME_BIN" "$NEXUS_VOLUME_BIN/duckdb" "$NEXUS_VOLUME_BIN/catalog.duckdb" -c "SELECT 1;"
+  fi
+
+volumes:
+  bin: {}   # downloaded duckdb binary, its extension cache, and the throwaway read-only catalog file (all HOME-scoped here)
+
+services:
+  duckdb-ui:
+    # The `-ui` web server's lifetime is tied to the CLI's own stdin loop — it
+    # exits the instant stdin hits EOF (confirmed live: there is no separate
+    # daemon/headless mode). `sleep infinity |` keeps stdin open forever so this
+    # runs as a proper long-lived service instead of exiting immediately.
+    #
+    # Binds [::1]:4213 (IPv6 loopback ONLY — confirmed live; NOT 127.0.0.1,
+    # there's no setting to change the bind host, only ui_local_port for the
+    # port). A consumer's Traefik route must target http://[::1]:4213, not
+    # 127.0.0.1. cwd is DUCKDB_UI_DATA_DIR so relative-path queries
+    # (read_parquet('raw/...')) work exactly like a human `cd`'d there on a
+    # terminal. `-readonly` opens the throwaway catalog.duckdb read-only,
+    # which blocks any catalog write (CREATE TABLE, COPY ... TO, etc.)
+    # without affecting SELECT/read_parquet.
+    run: >
+      sh -c 'cd "$DUCKDB_UI_DATA_DIR" && sleep infinity | HOME="$NEXUS_VOLUME_BIN" "$NEXUS_VOLUME_BIN/duckdb" -readonly -ui "$NEXUS_VOLUME_BIN/catalog.duckdb"'
