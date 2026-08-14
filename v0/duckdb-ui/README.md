@@ -3,12 +3,19 @@
 ## Purpose
 
 Hosts DuckDB's built-in browser SQL console (`duckdb -ui`) as a long-lived Nexus
-service, opened read-only against a directory of your choice — so anyone with access to
-the console can run ad-hoc SQL over Parquet (or CSV, JSON, ...) files there without a
+service, opened against a directory of your choice — so anyone with access to the
+console can run ad-hoc SQL over Parquet (or CSV, JSON, ...) files there without a
 terminal session on the host. Carries no opinions about which domain it's routed on or
 which directory it opens (that's the consumer's job — see "Required environment" below,
 and `../traefik/README.md` + `../authelia/README.md` for wiring up the route). This
 project only runs the console itself.
+
+**Read-write, not read-only — this is not a bug.** `-readonly` was tried first and
+confirmed live to break the `ui` extension's own initialization (it needs to write its
+internal `_duckdb_ui` catalog — see "Volumes" below); there's no read-only mode for this
+tool. Anyone with access to the console has the same effective trust level as shell
+access to the host: they can `CREATE TABLE`/`COPY ... TO` into `DUCKDB_UI_DATA_DIR`. Gate
+access accordingly (see "Dependencies").
 
 **Requires nothing else deployed first** — it doesn't touch Traefik's `dynamic` volume
 itself; a consumer project publishes its own route the same way `nexus-web-route`/
@@ -18,20 +25,13 @@ itself; a consumer project publishes its own route the same way `nexus-web-route
 
 | Volume | Path (`$NEXUS_VOLUME_<NAME>`) | Contents | Extension point? |
 |---|---|---|---|
-| `bin` | `~/.nexus/volumes/duckdb-ui/bin` | downloaded `duckdb` binary, its extension cache (`ui`), and a throwaway empty `catalog.duckdb` | no |
+| `bin` | `~/.nexus/volumes/duckdb-ui/bin` | downloaded `duckdb` binary + its extension cache (`ui`) | no |
+| `data` | `~/.nexus/volumes/duckdb-ui/data` | `catalog.duckdb` — the `ui` extension's own state (saved notebooks/queries, its internal `_duckdb_ui` catalog) | no |
 
-Nothing here is worth backing up — everything in `bin` is either re-downloadable or, for
-`catalog.duckdb`, deliberately empty (see "Why `-readonly` needs a real file" below).
-
-## Why `-readonly`, and why it needs a real file
-
-The service runs with `-readonly`, which blocks any catalog write (`CREATE TABLE`,
-`COPY ... TO`, etc.) through the console — `SELECT`/`read_parquet(...)` querying is
-unaffected. Confirmed live: `-readonly` only has an effect against a real database
-*file*; `duckdb -readonly` with no filename (DuckDB's in-memory default) errors outright
-("Cannot launch in-memory database in read-only mode!"). The build step creates one
-empty `catalog.duckdb` purely so `-readonly` has something to attach to — queries
-against `DUCKDB_UI_DATA_DIR` never touch it.
+`bin` can be wiped safely (re-downloadable). `data` is worth backing up once you've
+actually saved notebooks/queries in the console — it's the only state this project
+itself owns (the Parquet tree it's querying, `DUCKDB_UI_DATA_DIR`, belongs to the
+consumer, not this project).
 
 ## Services & ports
 
@@ -73,5 +73,7 @@ against this directory, exactly as if a human had `cd`'d there on a terminal.
 
 - `bin` can be wiped safely; rebuilt (including a fresh `INSTALL ui`, which needs
   network access) on the next deploy.
+- `data` should be backed up once it holds real saved notebooks/queries — losing it
+  doesn't affect `DUCKDB_UI_DATA_DIR` at all, just the console's own saved state.
 - The `ui` extension bundles its own frontend assets — after the first successful build,
   the service itself needs no further network access to serve the console.
