@@ -34,17 +34,30 @@ build: |
   if [ ! -f "$NEXUS_VOLUME_DATA/catalog.duckdb" ]; then
     HOME="$NEXUS_VOLUME_BIN" "$NEXUS_VOLUME_BIN/duckdb" "$NEXUS_VOLUME_DATA/catalog.duckdb" -c "SELECT 1;"
   fi
+  # See services.duckdb-ui.run below for why this FIFO exists.
+  [ -p "$NEXUS_VOLUME_BIN/stdin.fifo" ] || mkfifo "$NEXUS_VOLUME_BIN/stdin.fifo"
 
 volumes:
-  bin: {}    # downloaded duckdb binary + its extension cache (HOME-scoped here)
+  bin: {}    # downloaded duckdb binary, its extension cache, and stdin.fifo (all HOME/run-scoped here)
   data: {}   # catalog.duckdb — the ui extension's own state (saved notebooks/queries), not the Parquet tree it's querying (that's DUCKDB_UI_DATA_DIR, owned by the consumer)
 
 services:
   duckdb-ui:
     # The `-ui` web server's lifetime is tied to the CLI's own stdin loop — it
     # exits the instant stdin hits EOF (confirmed live: there is no separate
-    # daemon/headless mode). `sleep infinity |` keeps stdin open forever so this
-    # runs as a proper long-lived service instead of exiting immediately.
+    # daemon/headless mode), so stdin has to stay open forever for this to work
+    # as a long-lived service at all.
+    #
+    # NOT `sleep infinity | duckdb -ui ...`: that pipe is two processes (the
+    # shell + the piped `sleep`), so when Nexus stops the service it only
+    # signals the process it started — the wrapper shell — and `duckdb`,
+    # having lost its parent, is orphaned still holding the port. Confirmed
+    # live: this left a stuck instance of the *previous* release running
+    # after this exact deploy, requiring a manual kill to unstick. `exec`
+    # replaces the shell with `duckdb` in place (same PID, no wrapper for
+    # Nexus to lose track of), and `<> stdin.fifo` (open for read+write on a
+    # FIFO, not a pipe) blocks forever on read without needing a second
+    # process to hold the write end open — one process, no orphan risk.
     #
     # Binds [::1]:4213 (IPv6 loopback ONLY — confirmed live; NOT 127.0.0.1,
     # there's no setting to change the bind host, only ui_local_port for the
@@ -56,4 +69,4 @@ services:
     # CREATE TABLE/COPY ... TO into DUCKDB_UI_DATA_DIR, same trust level as
     # already having shell access to the host.
     run: >
-      sh -c 'cd "$DUCKDB_UI_DATA_DIR" && sleep infinity | HOME="$NEXUS_VOLUME_BIN" "$NEXUS_VOLUME_BIN/duckdb" -ui "$NEXUS_VOLUME_DATA/catalog.duckdb"'
+      sh -c 'cd "$DUCKDB_UI_DATA_DIR" && HOME="$NEXUS_VOLUME_BIN" exec "$NEXUS_VOLUME_BIN/duckdb" -ui "$NEXUS_VOLUME_DATA/catalog.duckdb" <> "$NEXUS_VOLUME_BIN/stdin.fifo"'

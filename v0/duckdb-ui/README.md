@@ -25,7 +25,7 @@ itself; a consumer project publishes its own route the same way `nexus-web-route
 
 | Volume | Path (`$NEXUS_VOLUME_<NAME>`) | Contents | Extension point? |
 |---|---|---|---|
-| `bin` | `~/.nexus/volumes/duckdb-ui/bin` | downloaded `duckdb` binary + its extension cache (`ui`) | no |
+| `bin` | `~/.nexus/volumes/duckdb-ui/bin` | downloaded `duckdb` binary, its extension cache (`ui`), and `stdin.fifo` (see "Services & ports") | no |
 | `data` | `~/.nexus/volumes/duckdb-ui/data` | `catalog.duckdb` — the `ui` extension's own state (saved notebooks/queries, its internal `_duckdb_ui` catalog) | no |
 
 `bin` can be wiped safely (re-downloadable). `data` is worth backing up once you've
@@ -40,9 +40,15 @@ consumer, not this project).
 | `duckdb-ui` | `[::1]:4213` — **IPv6 loopback only, confirmed live, not `127.0.0.1`.** DuckDB's `ui` extension has a `ui_local_port` setting but no bind-host setting; a consumer's Traefik route must target `http://[::1]:4213`. |
 
 The `-ui` web server's lifetime is tied to the CLI's own stdin loop — it exits the
-instant stdin hits EOF (there is no separate daemon/headless flag). `run:` in
-`nexus.yaml` pipes `sleep infinity` into it to keep stdin open indefinitely, which is
-what makes this work as a long-lived service at all.
+instant stdin hits EOF (there is no separate daemon/headless flag), so stdin has to stay
+open forever for this to work as a service at all. `run:` does this with `exec duckdb
+... <> stdin.fifo`: opening a FIFO for read+write blocks forever on read without needing
+a second process to hold the write end open, and `exec` replaces the wrapping shell with
+`duckdb` in place (same PID). Both matter — an earlier version used `sleep infinity |
+duckdb -ui` instead, which is two processes; confirmed live, stopping that service only
+signalled the shell Nexus had started, and `duckdb` (orphaned, reparented) kept running
+and holding the port, requiring a manual kill to unstick the next deploy. A single exec'd
+process has nothing for Nexus to lose track of.
 
 ## Dependencies
 
