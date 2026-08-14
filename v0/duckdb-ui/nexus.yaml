@@ -36,9 +36,15 @@ build: |
   fi
   # See services.duckdb-ui.run below for why this FIFO exists.
   [ -p "$NEXUS_VOLUME_BIN/stdin.fifo" ] || mkfifo "$NEXUS_VOLUME_BIN/stdin.fifo"
+  # See services.duckdb-ui-proxy below for why this exists at all. Building
+  # from source every deploy is cheap here (a single Go file, no external
+  # deps, no vendored engine) — unlike patching/self-compiling the `ui`
+  # extension itself, which was tried first and abandoned (huge vendored
+  # C++ build, high maintenance burden for what's a header-rewrite problem).
+  ( cd proxy && go build -o "$NEXUS_VOLUME_BIN/duckdb-ui-proxy" . )
 
 volumes:
-  bin: {}    # downloaded duckdb binary, its extension cache, and stdin.fifo (all HOME/run-scoped here)
+  bin: {}    # downloaded duckdb binary, its extension cache, stdin.fifo, and the built duckdb-ui-proxy binary (all HOME/run-scoped here)
   data: {}   # catalog.duckdb — the ui extension's own state (saved notebooks/queries), not the Parquet tree it's querying (that's DUCKDB_UI_DATA_DIR, owned by the consumer)
 
 services:
@@ -70,3 +76,31 @@ services:
     # already having shell access to the host.
     run: >
       sh -c 'cd "$DUCKDB_UI_DATA_DIR" && HOME="$NEXUS_VOLUME_BIN" exec "$NEXUS_VOLUME_BIN/duckdb" -ui "$NEXUS_VOLUME_DATA/catalog.duckdb" <> "$NEXUS_VOLUME_BIN/stdin.fifo"'
+
+  # The `ui` extension's HTTP server hardcodes its CSRF guard to accept only
+  # Origin/Referer == "http://localhost:<port>" (duckdb/duckdb-ui
+  # src/http_server.cpp — confirmed by reading the upstream open source, not
+  # guesswork) — deliberate, and not configurable via any flag/env var.
+  # That's incompatible with reaching this console through a real domain
+  # behind Traefik. Patching and self-compiling the extension was tried
+  # first and abandoned: it vendors the full DuckDB engine as a git
+  # submodule, and a from-source rebuild is a large, slow, high-maintenance
+  # C++ build for what is fundamentally a "rewrite two headers" problem.
+  #
+  # This proxy sits between Traefik and duckdb-ui (which is NOT directly
+  # reachable from outside this project once this exists — see
+  # duckdb-route in the consumer's nexus.yaml, which must target this
+  # service's port, not duckdb-ui's). It rewrites incoming Origin/Referer
+  # to duckdb-ui's own local_url before forwarding, so the extension's
+  # check passes, while Authelia (in front of Traefik) still provides the
+  # actual access control the check exists to approximate on a bare
+  # localhost setup. The frontend's own hostname gate
+  # (window.location.host.includes("localhost")) is unrelated to this and
+  # already satisfied by the consumer's route hostname (see duckdb-route's
+  # comment in retu's nexus.yaml) — no frontend changes needed.
+  # Defaults baked into the binary (see proxy/main.go) already match what
+  # this project needs — [::1]:4214 in, http://[::1]:4213 out, Origin
+  # rewritten to http://localhost:4213 — so no environment: overrides here.
+  duckdb-ui-proxy:
+    run: >
+      $NEXUS_VOLUME_BIN/duckdb-ui-proxy
