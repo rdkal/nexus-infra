@@ -22,17 +22,22 @@ build: |
   # this and the service's own run: below, so the extension cache lands inside
   # $NEXUS_VOLUME_BIN, not the operator's own ~/.duckdb.
   HOME="$NEXUS_VOLUME_BIN" "$NEXUS_VOLUME_BIN/duckdb" -c "INSTALL ui;"
-  # `-readonly` (services: below) only takes effect against a real database
-  # *file* — `duckdb -readonly` with no filename errors outright ("Cannot
-  # launch in-memory database in read-only mode!", confirmed live). This
-  # throwaway empty catalog exists solely so -readonly has a file to attach
-  # to; read_parquet() queries against DUCKDB_UI_DATA_DIR never touch it.
-  if [ ! -f "$NEXUS_VOLUME_BIN/catalog.duckdb" ]; then
-    HOME="$NEXUS_VOLUME_BIN" "$NEXUS_VOLUME_BIN/duckdb" "$NEXUS_VOLUME_BIN/catalog.duckdb" -c "SELECT 1;"
+  # The ui extension writes its own internal `_duckdb_ui` catalog into
+  # whatever database file it's opened against — saved notebooks, queries,
+  # session state. Confirmed live: `-readonly` blocks that write and breaks
+  # UI initialization outright ("Binder Error: Catalog _duckdb_ui does not
+  # exist!" / a RangeError deeper in a different code path depending on
+  # which auth fallback fires first) — read-write is not just a safety
+  # tradeoff here, `-readonly` genuinely does not work with `-ui`. So this
+  # file is real persistent state now, not a throwaway — see the `data`
+  # volume below, not `bin`.
+  if [ ! -f "$NEXUS_VOLUME_DATA/catalog.duckdb" ]; then
+    HOME="$NEXUS_VOLUME_BIN" "$NEXUS_VOLUME_BIN/duckdb" "$NEXUS_VOLUME_DATA/catalog.duckdb" -c "SELECT 1;"
   fi
 
 volumes:
-  bin: {}   # downloaded duckdb binary, its extension cache, and the throwaway read-only catalog file (all HOME-scoped here)
+  bin: {}    # downloaded duckdb binary + its extension cache (HOME-scoped here)
+  data: {}   # catalog.duckdb — the ui extension's own state (saved notebooks/queries), not the Parquet tree it's querying (that's DUCKDB_UI_DATA_DIR, owned by the consumer)
 
 services:
   duckdb-ui:
@@ -46,8 +51,9 @@ services:
     # port). A consumer's Traefik route must target http://[::1]:4213, not
     # 127.0.0.1. cwd is DUCKDB_UI_DATA_DIR so relative-path queries
     # (read_parquet('raw/...')) work exactly like a human `cd`'d there on a
-    # terminal. `-readonly` opens the throwaway catalog.duckdb read-only,
-    # which blocks any catalog write (CREATE TABLE, COPY ... TO, etc.)
-    # without affecting SELECT/read_parquet.
+    # terminal. Read-write against catalog.duckdb (see build: above for why
+    # -readonly isn't an option) — anyone with access to the console can
+    # CREATE TABLE/COPY ... TO into DUCKDB_UI_DATA_DIR, same trust level as
+    # already having shell access to the host.
     run: >
-      sh -c 'cd "$DUCKDB_UI_DATA_DIR" && sleep infinity | HOME="$NEXUS_VOLUME_BIN" "$NEXUS_VOLUME_BIN/duckdb" -readonly -ui "$NEXUS_VOLUME_BIN/catalog.duckdb"'
+      sh -c 'cd "$DUCKDB_UI_DATA_DIR" && sleep infinity | HOME="$NEXUS_VOLUME_BIN" "$NEXUS_VOLUME_BIN/duckdb" -ui "$NEXUS_VOLUME_DATA/catalog.duckdb"'
