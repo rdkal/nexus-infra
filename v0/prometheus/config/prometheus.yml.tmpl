@@ -1,0 +1,36 @@
+# Rendered from config/prometheus.yml.tmpl on every deploy — edit the template
+# in the repo, not this file. What you almost certainly want to change instead
+# is which targets get scraped, and that lives in the `targets` volume, which
+# this file only points at.
+#
+# Deliberately free of `$1`-style relabel references: this passes through
+# envsubst, which would eat them.
+
+global:
+  scrape_interval: ${SCRAPE_INTERVAL}
+  evaluation_interval: ${SCRAPE_INTERVAL}
+  external_labels:
+    host: ${COOKIE_DOMAIN}
+
+scrape_configs:
+  # Prometheus scraping itself. Cheap, and it means the instance is never
+  # completely blind — if this is the only series you have, the targets volume
+  # is empty.
+  - job_name: prometheus
+    static_configs:
+      - targets: ["127.0.0.1:9090"]
+
+  # THE EXTENSION POINT. Every *.yml and *.json in the targets volume is read
+  # as a list of scrape targets, and Prometheus watches the directory: adding,
+  # editing or removing a file takes effect within refresh_interval, with no
+  # redeploy and no restart.
+  #
+  # A file that sets `labels: {job: foo}` overrides the job name below, so each
+  # drop-in names its own job and they do not all pile up under one. See
+  # ../README.md for the format.
+  - job_name: file_sd
+    file_sd_configs:
+      - files:
+          - ${TARGETS_DIR}/*.yml
+          - ${TARGETS_DIR}/*.json
+        refresh_interval: 30s
