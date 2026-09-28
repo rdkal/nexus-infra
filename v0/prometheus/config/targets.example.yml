@@ -1,0 +1,20 @@
+# Example scrape target file. Copy to <something>.yml IN THIS DIRECTORY and
+# edit — this file itself is named README.example so Prometheus ignores it.
+#
+# Prometheus watches this directory. A new, changed or deleted file takes
+# effect within ~30s: no redeploy, no restart, no reload signal.
+#
+# The format is Prometheus's own file_sd: a list of target groups.
+
+- targets:
+    - "127.0.0.1:7777"        # host:port serving /metrics
+  labels:
+    job: nexus-web            # names the job; without it everything lands under "file_sd"
+
+# Several groups per file is fine, and so is several files — one per project
+# reads best, because then removing the project removes its file.
+#
+# - targets: ["127.0.0.1:8080", "127.0.0.1:8081"]
+#   labels:
+#     job: my-service
+#     tier: backend           # any extra labels are attached to every metric

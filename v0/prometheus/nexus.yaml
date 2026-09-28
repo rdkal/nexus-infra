@@ -1,0 +1,91 @@
+# spec path: github.com/rdkal/nexus-infra/v0/prometheus
+
+# Metrics for this host. Scrapes whatever the `targets` volume points it at —
+# that volume is the extension point, and the whole reason this project is
+# generic: nothing about which services exist lives in here.
+#
+# Required config — set these in $NEXUS_HOME/env/prometheus.env (operator file,
+# not in git), or via a parent's environment: override when nested.
+# Self-referencing so a missing one fails the deploy loudly instead of
+# rendering a config with an empty hostname in it.
+environment:
+  COOKIE_DOMAIN: ${COOKIE_DOMAIN}
+  SUBDOMAIN: ${SUBDOMAIN}
+
+  # Traefik's dynamic volume. The `:-` default is deliberate and matches
+  # authelia's: when this project is nested under a parent, NEXUS_TRAEFIK_DYNAMIC
+  # does not exist and the parent's own override supplies the real value. A hard
+  # reference here would fail nested deploys before the override could apply.
+  TRAEFIK_DYNAMIC_DIR: ${NEXUS_TRAEFIK_DYNAMIC:-}
+
+  # Storage caps. Prometheus will not police the disk for you: with neither of
+  # these set it keeps 15 days and however many bytes that turns out to be.
+  # Both are enforced, whichever binds first. Sized for a single host, not a
+  # fleet — raise deliberately.
+  RETENTION_TIME: ${PROM_RETENTION_TIME:-90d}
+  RETENTION_SIZE: ${PROM_RETENTION_SIZE:-8GB}
+
+  # How often every target is scraped, unless a target file overrides it.
+  SCRAPE_INTERVAL: ${PROM_SCRAPE_INTERVAL:-15s}
+
+build: |
+  set -eu
+  VERSION="v3.15.0"
+  if [ ! -x "$NEXUS_VOLUME_BIN/prometheus" ]; then
+    N="prometheus-${VERSION#v}.linux-amd64"
+    curl -fL "https://github.com/prometheus/prometheus/releases/download/${VERSION}/${N}.tar.gz" -o /tmp/prom.tar.gz
+    tar -xzf /tmp/prom.tar.gz -C /tmp "$N/prometheus" "$N/promtool"
+    mv "/tmp/$N/prometheus" "/tmp/$N/promtool" "$NEXUS_VOLUME_BIN/"
+    chmod +x "$NEXUS_VOLUME_BIN/prometheus" "$NEXUS_VOLUME_BIN/promtool"
+    rm -rf /tmp/prom.tar.gz "/tmp/$N"
+  fi
+  mkdir -p "$NEXUS_VOLUME_DATA" "$NEXUS_VOLUME_TARGETS"
+
+  # Rendered on EVERY deploy, unlike authelia's configuration.yml. There is
+  # nothing to hand-edit here: what a person wants to change is which targets
+  # get scraped, and that is the targets volume, which this file only points
+  # at. Keeping it generated means a version bump or a default change actually
+  # lands instead of being silently pinned to whatever the first deploy wrote.
+  export TARGETS_DIR="$NEXUS_VOLUME_TARGETS"
+  envsubst < config/prometheus.yml.tmpl > "$NEXUS_VOLUME_CONFIG/prometheus.yml"
+
+  # An example target file, written once and never overwritten, so the volume
+  # is self-documenting the first time someone opens it.
+  if [ ! -f "$NEXUS_VOLUME_TARGETS/README.example" ]; then
+    cp config/targets.example.yml "$NEXUS_VOLUME_TARGETS/README.example"
+  fi
+
+  # Fail the deploy on a bad config rather than crash-looping the service.
+  "$NEXUS_VOLUME_BIN/promtool" check config "$NEXUS_VOLUME_CONFIG/prometheus.yml"
+
+  # Publish our own route, same extension-point handshake authelia documents.
+  # Behind the authelia@file middleware: this UI has no auth of its own and
+  # exposes every metric on the host.
+  if [ -n "${TRAEFIK_DYNAMIC_DIR:-}" ]; then
+    envsubst < config/traefik-dynamic.yml.tmpl > "$TRAEFIK_DYNAMIC_DIR/prometheus.yml"
+  else
+    echo "WARNING: TRAEFIK_DYNAMIC_DIR is unset — skipping traefik route publish. Set it (directly at root level, or via a parent's environment: override when nested) to reach this Prometheus through traefik." >&2
+  fi
+
+volumes:
+  bin: {}      # downloaded prometheus + promtool binaries
+  config: {}   # rendered prometheus.yml (regenerated every deploy)
+  targets: {}  # EXTENSION POINT: *.yml scrape targets, see README.md
+  data: {}     # the TSDB
+
+services:
+  prometheus:
+    # Binds loopback only: traefik fronts it and authelia guards it. Exposing
+    # 9090 publicly would hand every metric on the host to anyone who asked.
+    #
+    # --web.external-url makes the UI generate links that survive the proxy;
+    # without it the redirect after a query lands on 127.0.0.1.
+    run: >
+      exec $NEXUS_VOLUME_BIN/prometheus
+      --config.file=$NEXUS_VOLUME_CONFIG/prometheus.yml
+      --storage.tsdb.path=$NEXUS_VOLUME_DATA
+      --storage.tsdb.retention.time=$RETENTION_TIME
+      --storage.tsdb.retention.size=$RETENTION_SIZE
+      --web.listen-address=127.0.0.1:9090
+      --web.external-url=https://$SUBDOMAIN.$COOKIE_DOMAIN
+      --web.enable-lifecycle

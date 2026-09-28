@@ -1,0 +1,20 @@
+http:
+  routers:
+    prometheus:
+      rule: "Host(`${SUBDOMAIN}.${COOKIE_DOMAIN}`)"
+      entryPoints:
+        - websecure
+      # Prometheus has no authentication of its own and its UI exposes every
+      # metric on the host, so it goes behind the same forward-auth gate as
+      # every other admin surface. See ../../authelia/README.md.
+      middlewares:
+        - authelia
+      service: prometheus
+      tls:
+        certResolver: letsencrypt
+
+  services:
+    prometheus:
+      loadBalancer:
+        servers:
+          - url: "http://127.0.0.1:9090"

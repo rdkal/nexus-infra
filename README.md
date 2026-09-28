@@ -10,6 +10,7 @@ instead of hand-maintained systemd units. This repo is scoped to the pieces that
 v0/
   traefik/
   authelia/
+  prometheus/
 ```
 
 Each top-level project lives under a `v0/<name>/` directory and is added independently:
@@ -17,6 +18,7 @@ Each top-level project lives under a `v0/<name>/` directory and is added indepen
 ```sh
 nexus project add github.com/rdkal/nexus-infra/v0/traefik
 nexus project add github.com/rdkal/nexus-infra/v0/authelia
+nexus project add github.com/rdkal/nexus-infra/v0/prometheus
 ```
 
 ### Why the `v0/` prefix
@@ -43,5 +45,7 @@ Every project directory has a `README.md` with these sections:
 - **Deploy / rollback notes** — anything non-obvious about bringing it up, tearing it
   down, or rolling back a bad deploy.
 
-See `v0/traefik/README.md` for a worked example of documenting an extension point (its
-`dynamic` volume, where other projects add their own routes).
+Two projects document an extension point, and they are the worked examples to copy:
+`v0/traefik/README.md` (its `dynamic` volume, where other projects add their own routes)
+and `v0/prometheus/README.md` (its `targets` volume, where they add their own scrape
+targets).
